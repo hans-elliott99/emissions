@@ -1,1 +1,5 @@
 oco2_data/
+data-2017NEI_point/
+shapefiles/
+*cache/
+.Rproj.user

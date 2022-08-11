@@ -1,0 +1,150 @@
+---
+title: "National Emissions Inventory - Point Data exploration"
+author: "Hans Elliott"
+date: "8/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE,
+                      cache = TRUE,
+                      dpi = 200)
+```
+
+
+```{r}
+# libs
+library(pacman)
+pacman::p_load(readr, here, janitor, dplyr, tidyr,
+               kableExtra,
+               ggsflabel, hrbrthemes, scales, ggplot2, sf)
+devtools::install_github("yutannihilation/ggsflabel")
+```
+
+
+```{r}
+# Emissions Data
+co2_point = here("data-2017NEI_point/point_678910.csv") %>% read_csv()
+##clean names
+co2_point = janitor::clean_names(co2_point)
+dim(co2_point)
+names(co2_point)
+
+##filter to Oregon, remove full dataframe
+co2_oregon = co2_point %>% filter(state == "OR")
+rm(co2_point)
+sprintf("co2_oregon dimensions: %d, %d", dim(co2_oregon)[1], dim(co2_oregon)[2])
+```
+
+```{r}
+# Shapefiles
+or_counties = here("shapefiles/orcnty2015/orcntypoly.shp") %>% st_read() %>%
+  select(-c(descriptn, effDate, unitOwner, cSteward, unitID)) %>%
+  janitor::clean_names()
+or_counties %>% head()
+
+or_counties %>%
+  ggplot() +
+  geom_sf()
+```
+
+
+
+```{r}
+# Filter to desired columns
+cols = c("county", "fips", "site_latitude", "site_longitude", "eis_facility_id",
+         "site_name", "naics_code", "naics_description", "scc", 
+         "pollutant_code", "pollutant_desc", "pollutant_type", 
+         "total_emissions", "emissions_uom")
+co2_fil = co2_oregon[, cols]
+# remove Oregon's "41" at the front of the fips code
+co2_fil$fips = gsub(".*0",0,co2_fil$fips)
+co2_fil[2, 1:5]
+```
+
+
+# County-level emissions
+```{r}
+# County emissions
+county_emissions = co2_fil %>% filter(pollutant_code=="CO2") %>% 
+                    group_by(county, fips) %>%
+                    summarise(
+                      county_emissions = sum(total_emissions, na.rm=TRUE)
+                      )
+# Merge with county boundaries
+
+county_emissions = left_join(or_counties, data.frame(county_emissions),
+                              by = c("inst_code"="fips")) %>%
+  st_as_sf() ##convert back to sf object
+
+
+data.frame(county_emissions) %>% select(inst_name, county_emissions) %>%
+  drop_na() %>%
+  transmute(" "=inst_name, 
+            "2017 Emissions (million tons)" = round(county_emissions/1e06, 3)
+  ) %>%
+  kbl() %>%
+  kable_styling()
+  
+```
+
+
+
+```{r}
+# plot map
+ggplot(county_emissions) +
+  geom_sf(aes(fill = county_emissions), color = "white") +
+  ggsflabel::geom_sf_label_repel(aes(label = alt_name, color = county_emissions), 
+                                 fill= alpha("white",0.5),
+                                 label.size=NA,
+                                 force = 100) + 
+  labs(x="",y="", color="", fill="",
+       title="Oregon's CO2 Emissions (Tons)", subtitle = "2017") +
+  scale_fill_viridis_c(na.value = "gray90", labels = scales::comma) +
+  scale_color_gradient(low = "black", high = "black", guide = "none") +
+  hrbrthemes::theme_ipsum() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank()
+  )
+```
+
+```{r}
+ggplot(county_emissions) +
+  geom_sf(fill="white", color="gray30") +
+  geom_point(
+    aes(color = county_emissions, size = county_emissions,
+        geometry = geometry),
+    stat = "sf_coordinates"
+  ) +
+  ggsflabel::geom_sf_label_repel(aes(label = county), 
+                                 color = "black",
+                                 fill = alpha("white",0.5),
+                                 label.size=NA,
+                                 force = 100) +
+  labs(x="",y="", color="", size="",
+       title="Oregon CO2 Emissions (Tons)", subtitle = "2017") +
+  scale_color_viridis_c(na.value = "gray90", labels = scales::comma,
+                        limits = c(0, 4e06), breaks = seq(0, 4e06, by = 1e06)) +
+  scale_size_continuous(limits = c(0, 4e06), breaks = seq(0, 4e06, by = 1e06), 
+                        labels = scales::comma) +
+  guides(color=guide_legend(), size=guide_legend()) +
+  hrbrthemes::theme_ipsum() +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank()
+    )
+```
+
+
+
+
+
+
+
