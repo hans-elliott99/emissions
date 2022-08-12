@@ -2,4 +2,6 @@ oco2_data/
 data-2017NEI_point/
 shapefiles/
 *cache/
+.Rhistory
 .Rproj.user
+*.Rproj
